@@ -1,8 +1,9 @@
 import pyautogui
 import time
+
 from src.checking import *
 from src.movement import *
-import keyboard
+
 
 dig_bar_width = 640
 dig_bar_empty_hex = "#8c8c8c"
@@ -122,12 +123,4 @@ def start_panning():
 if __name__ == "__main__":
     calibrate()
     start_digging()
-    try:
-        while True:
-            if keyboard.is_pressed('esc'):
-                print("Escape key pressed. Exiting program.")
-                break
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        pass
-    
+
