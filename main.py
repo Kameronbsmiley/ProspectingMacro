@@ -1,9 +1,11 @@
 import pyautogui
 import time
-
+import keyboard
 from src.checking import *
 from src.movement import *
-
+import keyboard
+import tkinter as tk
+from tkinter import messagebox
 
 dig_bar_width = 640
 dig_bar_empty_hex = "#8c8c8c"
@@ -15,56 +17,92 @@ dig_bar_top_left = (0, 0)
 dig_bar_bottom_right = (0, 0)
 
 dig_icon_location = (0, 0)
-pan_icon_location = (0, 0)
 
 dig_speed_percent = 140 # Adjust this value based on your digging speed
 
 def calibrate():
-    """
+    """w
     Calibrate the position of the dig bar and luck text.
     """
-    print("Please click the top-left corner of the region to calibrate.")
-    top_left = pyautogui.position()
-    pyautogui.alert("Move mosue around top left of dig bar and hit enter to continue")
-    top_left = pyautogui.position()
+    global dig_bar_top_left, dig_bar_bottom_right, dig_icon_location
+    
+    def get_mouse_position(prompt):
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo("Calibration", prompt)
+        pos = pyautogui.position()
+        root.destroy()
+        return pos
 
-    print("Now click the bottom-right corner of the region to calibrate.")
-    pyautogui.alert("Move mouse around bottom right of dig bar and hit enter to continue")
-    bottom_right = pyautogui.position()
+    # Prompt user for top left and bottom right corners
+    dig_bar_top_left = get_mouse_position("Move your mouse to the TOP LEFT of the dig bar and press OK.")
+    dig_bar_bottom_right = get_mouse_position("Move your mouse to the BOTTOM RIGHT of the dig bar and press OK.")
 
-    region = (top_left.x, top_left.y, bottom_right.x - top_left.x, bottom_right.y - top_left.y)
-    screenshot = pyautogui.screenshot(region=region)
-    width, height = screenshot.size
-    screenshot.save("calibration_screenshot.png")
-    found = False
-    for y in range(height):
-        for x in range(width):
-            pixel = screenshot.getpixel((x, y))
-            hex_color = '#{:02x}{:02x}{:02x}'.format(*pixel)
-            if hex_color.lower() == "#8c8c8c".lower():
-                screen_x = top_left.x + x
-                screen_y = top_left.y + y
-                pyautogui.moveTo(screen_x, screen_y)
-                pyautogui.click()
-                print(f"Found color at ({screen_x}, {screen_y})")
-                
-                global dig_bar_top_left, dig_bar_bottom_right, dig_icon_location, pan_icon_location
-                
-                dig_bar_top_left = (screen_x, screen_y) # Update the top-left corner
-                dig_bar_bottom_right = (dig_bar_top_left[0] + (dig_bar_width - 1), dig_bar_top_left[1] + 51)
-                
-                dig_icon_location = (dig_bar_top_left[0] + 156, dig_bar_top_left[1] + 139)  # Adjusted for collect icon
-                pan_icon_location = (dig_bar_top_left[0] + 256, dig_bar_top_left[1] + 139)  # Adjusted for pan icon
-                
-                print(dig_icon_location, pan_icon_location)
-                pyautogui.moveTo(dig_icon_location)  # Move mouse out of the way
-                found = True
-                
+    # Calculate width and height
+    width = dig_bar_bottom_right[0] - dig_bar_top_left[0]
+    height = dig_bar_bottom_right[1] - dig_bar_top_left[1]
+
+    # Take screenshot of the selected region
+    screenshot = pyautogui.screenshot(region=(dig_bar_top_left[0], dig_bar_top_left[1], width, height))
+
+    # Find exact top left and bottom right pixels of the dig bar by scanning for dig_bar_empty_hex
+    def find_bar_edges(img, hex_color):
+        pixels = img.load()
+        w, h = img.size
+        found_top_left = None
+        found_bottom_right = None
+        for y in range(h):
+            for x in range(w):
+                pixel = pixels[x, y]
+                pixel_hex = '#{:02x}{:02x}{:02x}'.format(*pixel)
+                if pixel_hex.lower() == hex_color.lower():
+                    if not found_top_left:
+                        found_top_left = (x, y)
+                    found_bottom_right = (x, y)
+        return found_top_left, found_bottom_right
+
+    bar_top_left_rel, bar_bottom_right_rel = find_bar_edges(screenshot, dig_bar_empty_hex)
+
+    if bar_top_left_rel and bar_bottom_right_rel:
+        dig_bar_top_left = (dig_bar_top_left[0] + bar_top_left_rel[0], dig_bar_top_left[1] + bar_top_left_rel[1])
+        dig_bar_bottom_right = (dig_bar_top_left[0] + (bar_bottom_right_rel[0] - bar_top_left_rel[0]),
+                                dig_bar_top_left[1] + (bar_bottom_right_rel[1] - bar_top_left_rel[1]))
+
+        # Move mouse to bottom right pixel and save screenshot of the bar itself
+        bar_width = dig_bar_bottom_right[0] - dig_bar_top_left[0]
+        bar_height = dig_bar_bottom_right[1] - dig_bar_top_left[1]
+        bar_screenshot = pyautogui.screenshot(region=(dig_bar_top_left[0], dig_bar_top_left[1], bar_width, bar_height))
+        bar_screenshot.save("calibrated_dig_bar.png")
+    else:
+        print("Could not find dig bar edges. Please recalibrate.")
+
+    # Determine screenshot area below the dig bar to locate the dig icon
+    bar_height = dig_bar_bottom_right[1] - dig_bar_top_left[1]
+    search_top_left = (dig_bar_top_left[0], dig_bar_bottom_right[1] + bar_height)
+    search_width = dig_bar_bottom_right[0] - dig_bar_top_left[0]
+    search_height = bar_height
+
+    search_screenshot = pyautogui.screenshot(region=(search_top_left[0], search_top_left[1], search_width, search_height))
+    search_screenshot.save("dig_icon_search_area.png")
+    found_dig_icon = None
+    pixels = search_screenshot.load()
+    for y in range(search_height):
+        for x in range(search_width):
+            pixel = pixels[x, y]
+            pixel_hex = '#{:02x}{:02x}{:02x}'.format(*pixel)
+            if pixel_hex.lower() == mouse_icon_hex.lower():
+                found_dig_icon = (search_top_left[0] + x, search_top_left[1] + y)
                 break
-        if found:
+        if found_dig_icon:
             break
-    if not found:
-        print("Specified color not found in the selected region.")
+
+    if found_dig_icon:
+        dig_icon_location = found_dig_icon
+        print(f"Dig icon found at: {dig_icon_location}")
+    else:
+        print("Could not find dig icon pixel. Please recalibrate.")
+
+
 
     return dig_bar_top_left, dig_bar_bottom_right
 
@@ -113,14 +151,16 @@ def start_panning():
             break
 
         # Simulate panning action
-        pyautogui.mouseDown(pan_icon_location[0], pan_icon_location[1], button='left')
+        pyautogui.mouseDown(dig_icon_location[0], dig_icon_location[1], button='left')
         pyautogui.mouseUp(button='left')
-        
+    
     move_to_dig(dig_icon_location, mouse_icon_hex, start_digging)
         
 # Uncomment the following line to start the panning process
 
 if __name__ == "__main__":
     calibrate()
+    print("Calibration complete. You can now start digging.")
+    print("Dig bar rectangle:", dig_bar_top_left, dig_bar_bottom_right)
+    print("Dig icon location:", dig_icon_location)
     start_digging()
-
